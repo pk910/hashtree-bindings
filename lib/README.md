@@ -1,12 +1,12 @@
 # Static Library Bundle
 
 ## Build Information
-- **Commit:** 398ce4383f153066e22525d591b1a1a0875a3744
-- **Build Date:** 2025-11-15 03:07:48 UTC
+- **Commit:** d020247de8a70e51fb0f0479809b30fddbd8d730
+- **Build Date:** 2025-11-16 03:19:11 UTC
 - **Build Trigger:** schedule
 - **Repository:** pk910/hashtree-bindings
 - **Workflow:** Build Static Libraries
-- **Run ID:** 19383476599
+- **Run ID:** 19399569054
 
 ## Contents
 Each platform directory contains:
@@ -38,6 +38,6 @@ sha256sum -c libhashtree.a.sha256
 
 ## Reproduction
 To reproduce these builds:
-1. Check out commit: `git checkout 398ce4383f153066e22525d591b1a1a0875a3744`
+1. Check out commit: `git checkout d020247de8a70e51fb0f0479809b30fddbd8d730`
 2. Use the same GitHub Actions environment (see workflow file)
 3. The build should produce identical checksums

@@ -11,6 +11,12 @@ This repository provides Go bindings for the hashtree library, which implements 
 
 The library automatically selects the best available implementation at runtime based on CPU capabilities.
 
+## Hashtree Version
+
+Built from [hashtree](https://github.com/OffchainLabs/hashtree) library:
+- **Commit:** [`f733b76`](https://github.com/OffchainLabs/hashtree/commit/f733b7698511b5498b722421a30ddf7e5066497c)
+- **Version:** `v0.2.0-5-gf733b76`
+
 ## Installation
 
 ```bash

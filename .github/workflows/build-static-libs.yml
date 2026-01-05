@@ -7,25 +7,78 @@ on:
   push:
     branches: [main]
     paths:
-      - 'hashtree/src/**'
       - '.github/workflows/build-static-libs.yml'
-  pull_request:
-    paths:
-      - 'hashtree/src/**'
 
 jobs:
-  build-linux-amd64:
-    runs-on: ubuntu-22.04
+  check-hashtree-version:
+    runs-on: ubuntu-latest
+    outputs:
+      needs_build: ${{ steps.check.outputs.needs_build }}
+      hashtree_commit: ${{ steps.check.outputs.hashtree_commit }}
+      hashtree_short: ${{ steps.check.outputs.hashtree_short }}
+      hashtree_tag: ${{ steps.check.outputs.hashtree_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
+      - name: Check if hashtree version changed
+        id: check
+        run: |
+          # Get current hashtree submodule commit
+          HASHTREE_COMMIT=$(git -C hashtree rev-parse HEAD)
+          HASHTREE_SHORT=$(git -C hashtree rev-parse --short HEAD)
+
+          # Try to get tag info
+          HASHTREE_TAG=$(git -C hashtree describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -z "$HASHTREE_TAG" ]; then
+            # Not on exact tag, get closest tag with distance
+            HASHTREE_TAG=$(git -C hashtree describe --tags 2>/dev/null || echo "untagged")
+          fi
+
+          echo "hashtree_commit=$HASHTREE_COMMIT" >> $GITHUB_OUTPUT
+          echo "hashtree_short=$HASHTREE_SHORT" >> $GITHUB_OUTPUT
+          echo "hashtree_tag=$HASHTREE_TAG" >> $GITHUB_OUTPUT
+
+          echo "Current hashtree commit: $HASHTREE_COMMIT"
+          echo "Current hashtree tag: $HASHTREE_TAG"
+
+          # Check stored version
+          if [ -f lib/HASHTREE_VERSION ]; then
+            STORED_COMMIT=$(cat lib/HASHTREE_VERSION)
+            echo "Stored hashtree commit: $STORED_COMMIT"
+
+            if [ "$HASHTREE_COMMIT" = "$STORED_COMMIT" ]; then
+              echo "Hashtree version unchanged, skipping build"
+              echo "needs_build=false" >> $GITHUB_OUTPUT
+            else
+              echo "Hashtree version changed, build needed"
+              echo "needs_build=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No stored version found, build needed"
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Force build on workflow changes or manual trigger
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.modified, '.github/workflows/build-static-libs.yml'))
+        run: |
+          echo "needs_build=true" >> $GITHUB_OUTPUT
+
+  build-linux-amd64:
+    runs-on: ubuntu-22.04
+    needs: check-hashtree-version
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
-          
+
       - name: Build Linux AMD64 library
         run: |
           cd hashtree/src
@@ -41,7 +94,7 @@ jobs:
           ranlib ./libhashtree.a
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
-          
+
       - name: Upload Linux AMD64 library
         uses: actions/upload-artifact@v4
         with:
@@ -53,16 +106,18 @@ jobs:
 
   build-linux-arm64:
     runs-on: ubuntu-22.04
+    needs: check-hashtree-version
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
       - name: Install ARM64 cross-compiler
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          
+
       - name: Build Linux ARM64 library
         run: |
           cd hashtree/src
@@ -78,7 +133,7 @@ jobs:
           aarch64-linux-gnu-ranlib ./libhashtree.a
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
-          
+
       - name: Upload Linux ARM64 library
         uses: actions/upload-artifact@v4
         with:
@@ -91,11 +146,13 @@ jobs:
 
   build-darwin-arm64:
     runs-on: macos-14  # Apple Silicon macOS
+    needs: check-hashtree-version
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
       - name: Build Darwin ARM64 library
         run: |
           cd hashtree/src
@@ -111,7 +168,7 @@ jobs:
           ranlib ./libhashtree.a
           # Generate checksum
           shasum -a 256 libhashtree.a > libhashtree.a.sha256
-          
+
       - name: Upload Darwin ARM64 library
         uses: actions/upload-artifact@v4
         with:
@@ -123,6 +180,8 @@ jobs:
 
   build-windows-amd64:
     runs-on: windows-latest
+    needs: check-hashtree-version
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
     defaults:
       run:
         shell: msys2 {0}
@@ -130,7 +189,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -140,7 +199,7 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
             make
-            
+
       - name: Build Windows AMD64 library
         run: |
           cd hashtree/src
@@ -160,7 +219,7 @@ jobs:
           ranlib ./libhashtree.a
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
-          
+
       - name: Upload Windows AMD64 library
         uses: actions/upload-artifact@v4
         with:
@@ -172,7 +231,8 @@ jobs:
 
   collect-libraries:
     runs-on: ubuntu-latest
-    needs: [build-linux-amd64, build-linux-arm64, build-darwin-arm64, build-windows-amd64]
+    needs: [check-hashtree-version, build-linux-amd64, build-linux-arm64, build-darwin-arm64, build-windows-amd64]
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
     permissions:
       contents: write
     steps:
@@ -180,29 +240,29 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Create lib directories
         run: |
           mkdir -p lib/{linux_amd64,linux_arm64,darwin_arm64,windows_amd64}
-          
+
       - name: Download all libraries
         uses: actions/download-artifact@v4
         with:
           pattern: libhashtree-*
           merge-multiple: false
-          
+
       - name: Move libraries and checksums to correct locations
         run: |
           cp libhashtree-linux-amd64/libhashtree.a* lib/linux_amd64/
           cp libhashtree-linux-arm64/libhashtree.a* lib/linux_arm64/
           cp libhashtree-darwin-arm64/libhashtree.a* lib/darwin_arm64/
           cp libhashtree-windows-amd64/libhashtree.a* lib/windows_amd64/
-          
+
       - name: Verify libraries and checksums
         run: |
           echo "=== Library Information ==="
           echo "Linux AMD64:" && file lib/linux_amd64/libhashtree.a
-          echo "Linux ARM64:" && file lib/linux_arm64/libhashtree.a  
+          echo "Linux ARM64:" && file lib/linux_arm64/libhashtree.a
           echo "Darwin ARM64:" && file lib/darwin_arm64/libhashtree.a
           echo "Windows AMD64:" && file lib/windows_amd64/libhashtree.a
           echo ""
@@ -217,90 +277,111 @@ jobs:
             fi
             cd ../..
           done
-          
-      - name: Create library bundle
+
+      - name: Update hashtree version file
         run: |
-          echo "# Static Library Bundle" > lib/README.md
-          echo "" >> lib/README.md
-          echo "## Build Information" >> lib/README.md
-          echo "- **Commit:** ${{ github.sha }}" >> lib/README.md
-          echo "- **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> lib/README.md
-          echo "- **Build Trigger:** ${{ github.event_name }}" >> lib/README.md
-          echo "- **Repository:** ${{ github.repository }}" >> lib/README.md
-          echo "- **Workflow:** ${{ github.workflow }}" >> lib/README.md
-          echo "- **Run ID:** ${{ github.run_id }}" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "## Contents" >> lib/README.md
-          echo "Each platform directory contains:" >> lib/README.md
-          echo "- \`libhashtree.a\` - Static library with platform-specific optimizations" >> lib/README.md
-          echo "- \`libhashtree.a.sha256\` - SHA256 checksum for verification" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "### Platform Details:" >> lib/README.md
-          echo "- **linux_amd64/** - Linux x86_64 with AVX2/AVX512/SHANI optimizations" >> lib/README.md
-          echo "- **linux_arm64/** - Linux ARM64 with NEON/SHA2 optimizations" >> lib/README.md
-          echo "- **darwin_arm64/** - macOS Apple Silicon with SHA2 optimizations" >> lib/README.md
-          echo "- **windows_amd64/** - Windows x86_64 with AVX2/AVX512/SHANI optimizations" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "**Note:** macOS Intel (darwin_amd64) is not included - uses pure Go fallback implementation" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "## Reproducible Builds" >> lib/README.md
-          echo "These libraries are built with reproducible build flags:" >> lib/README.md
-          echo "- \`SOURCE_DATE_EPOCH\` set to commit timestamp" >> lib/README.md
-          echo "- \`-ffile-prefix-map\` to normalize file paths" >> lib/README.md
-          echo "- Debug symbols stripped for determinism" >> lib/README.md
-          echo "- Archive metadata normalized" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "## Verification" >> lib/README.md
-          echo "To verify library integrity:" >> lib/README.md
-          echo "\`\`\`bash" >> lib/README.md
-          echo "# Verify SHA256 checksum" >> lib/README.md
-          echo "sha256sum -c libhashtree.a.sha256" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "\`\`\`" >> lib/README.md
-          echo "" >> lib/README.md
-          echo "## Reproduction" >> lib/README.md
-          echo "To reproduce these builds:" >> lib/README.md
-          echo "1. Check out commit: \`git checkout ${{ github.sha }}\`" >> lib/README.md
-          echo "2. Use the same GitHub Actions environment (see workflow file)" >> lib/README.md
-          echo "3. The build should produce identical checksums" >> lib/README.md
-          
-          
-      - name: Check for library changes
-        id: check_changes
+          echo "${{ needs.check-hashtree-version.outputs.hashtree_commit }}" > lib/HASHTREE_VERSION
+
+      - name: Create library bundle README
         run: |
-          # Check if any library files have changed
-          git add lib/
-          if git diff --cached --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "No changes detected in library files"
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changes detected in library files"
-            git diff --cached --name-only
-          fi
-          
-      - name: Get submodule commit
-        if: steps.check_changes.outputs.changed == 'true'
-        id: submodule_info
+          cat > lib/README.md << 'EOF'
+          # Static Library Bundle
+
+          ## Hashtree Version
+          - **Commit:** ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
+          - **Tag:** ${{ needs.check-hashtree-version.outputs.hashtree_tag }}
+
+          ## Build Information
+          - **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          - **Build Trigger:** ${{ github.event_name }}
+          - **Repository:** ${{ github.repository }}
+          - **Workflow:** ${{ github.workflow }}
+          - **Run ID:** ${{ github.run_id }}
+
+          ## Contents
+          Each platform directory contains:
+          - `libhashtree.a` - Static library with platform-specific optimizations
+          - `libhashtree.a.sha256` - SHA256 checksum for verification
+
+          ### Platform Details:
+          - **linux_amd64/** - Linux x86_64 with AVX2/AVX512/SHANI optimizations
+          - **linux_arm64/** - Linux ARM64 with NEON/SHA2 optimizations
+          - **darwin_arm64/** - macOS Apple Silicon with SHA2 optimizations
+          - **windows_amd64/** - Windows x86_64 with AVX2/AVX512/SHANI optimizations
+
+          **Note:** macOS Intel (darwin_amd64) is not included - uses pure Go fallback implementation
+
+          ## Reproducible Builds
+          These libraries are built with reproducible build flags:
+          - `SOURCE_DATE_EPOCH` set to commit timestamp
+          - `-ffile-prefix-map` to normalize file paths
+          - Debug symbols stripped for determinism
+          - Archive metadata normalized
+
+          ## Verification
+          To verify library integrity:
+          ```bash
+          sha256sum -c libhashtree.a.sha256
+          ```
+          EOF
+          # Replace the date placeholder
+          sed -i "s/\$(date -u +\"%Y-%m-%d %H:%M:%S UTC\")/$(date -u +"%Y-%m-%d %H:%M:%S UTC")/" lib/README.md
+
+      - name: Update main README with hashtree version
+        env:
+          HASHTREE_COMMIT: ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
+          HASHTREE_TAG: ${{ needs.check-hashtree-version.outputs.hashtree_tag }}
         run: |
-          cd hashtree
-          SUBMODULE_COMMIT=$(git rev-parse HEAD)
-          SUBMODULE_SHORT=$(git rev-parse --short HEAD)
-          echo "commit=$SUBMODULE_COMMIT" >> $GITHUB_OUTPUT
-          echo "short=$SUBMODULE_SHORT" >> $GITHUB_OUTPUT
-          cd ..
-          
+          SHORT_COMMIT="${HASHTREE_COMMIT:0:7}"
+
+          python3 - "$HASHTREE_COMMIT" "$HASHTREE_TAG" "$SHORT_COMMIT" << 'PYEOF'
+          import re
+          import sys
+          from textwrap import dedent
+
+          commit = sys.argv[1]
+          tag = sys.argv[2]
+          short = sys.argv[3]
+
+          version_section = dedent(f"""
+          ## Hashtree Version
+
+          Built from [hashtree](https://github.com/OffchainLabs/hashtree) library:
+          - **Commit:** [`{short}`](https://github.com/OffchainLabs/hashtree/commit/{commit})
+          - **Version:** `{tag}`
+          """).strip() + "\n"
+
+          with open('README.md', 'r') as f:
+              content = f.read()
+
+          # Remove existing Hashtree Version section if present
+          content = re.sub(r'## Hashtree Version\n.*?(?=\n## |\Z)', '', content, flags=re.DOTALL)
+
+          # Add new section after Overview section
+          content = re.sub(r'(## Overview\n.*?)(\n## )', r'\1\n' + version_section + r'\n\2', content, count=1, flags=re.DOTALL)
+
+          with open('README.md', 'w') as f:
+              f.write(content)
+          PYEOF
+
       - name: Commit and push changes
-        if: steps.check_changes.outputs.changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git commit -m "Update static libraries for hashtree@${{ steps.submodule_info.outputs.short }}
+          git add lib/ README.md
 
-          Built from hashtree commit: ${{ steps.submodule_info.outputs.commit }}
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update static libraries for hashtree@${{ needs.check-hashtree-version.outputs.hashtree_short }}
+
+          Built from hashtree commit: ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
+          Hashtree version: ${{ needs.check-hashtree-version.outputs.hashtree_tag }}
           Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          git push
-          
+            git push
+          fi
+
       - name: Upload static library bundle
         uses: actions/upload-artifact@v4
         with:

@@ -13,11 +13,12 @@ The library automatically selects the best available implementation at runtime b
 
 
 
+
 ## Hashtree Version
 
 Built from [hashtree](https://github.com/OffchainLabs/hashtree) library:
-- **Commit:** [`4277a13`](https://github.com/OffchainLabs/hashtree/commit/4277a136f1e7181e142bb6c60bc781ada1db13f8)
-- **Version:** `v0.2.2`
+- **Commit:** [`6049f77`](https://github.com/OffchainLabs/hashtree/commit/6049f7738e28b7f50db427eb7e89f775315c9274)
+- **Version:** `v0.2.3`
 
 
 ## Installation

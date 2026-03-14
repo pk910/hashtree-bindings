@@ -1,6 +1,6 @@
 module github.com/pk910/hashtree-bindings
 
-go 1.25.0
+go 1.22.2
 
 require github.com/klauspost/cpuid/v2 v2.3.0
 

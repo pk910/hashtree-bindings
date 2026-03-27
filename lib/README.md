@@ -1,15 +1,15 @@
 # Static Library Bundle
 
 ## Hashtree Version
-- **Commit:** 5542a30f4498b806e94a428ca78e6749679766d4
+- **Commit:** d4fa8b91651fd12d4a0f7099b03c706565b0efec
 - **Tag:** untagged
 
 ## Build Information
-- **Build Date:** 2026-03-17 04:21:06 UTC
+- **Build Date:** 2026-03-27 04:34:56 UTC
 - **Build Trigger:** schedule
 - **Repository:** pk910/hashtree-bindings
 - **Workflow:** Build Static Libraries
-- **Run ID:** 23178222916
+- **Run ID:** 23631307550
 
 ## Contents
 Each platform directory contains:

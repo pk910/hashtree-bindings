@@ -411,8 +411,12 @@ jobs:
         run: |
           export BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           # Pull the exact compiler version recorded by each build job. Artifact
-          # dirs use hyphens (libhashtree-linux-amd64) vs lib/ underscores.
-          read_bi() { head -1 "libhashtree-${1//_/-}/libhashtree.a.buildinfo" 2>/dev/null || echo "unknown"; }
+          # dirs use hyphens (libhashtree-linux-amd64) vs lib/ underscores. Strip
+          # CR (MSYS2/Windows writes CRLF) so it can't break the README table.
+          read_bi() {
+            f="libhashtree-${1//_/-}/libhashtree.a.buildinfo"
+            if [ -f "$f" ]; then head -1 "$f" | tr -d '\r'; else echo "unknown"; fi
+          }
           export CC_AMD64="$(read_bi linux_amd64)"
           export CC_ARM64="$(read_bi linux_arm64)"
           export CC_RISCV64="$(read_bi linux_riscv64)"
@@ -519,7 +523,7 @@ jobs:
           the Linux targets; macOS and Windows use native toolchains that cannot run
           in a Linux container.
 
-          **linux_amd64** — expect `cat lib/linux_amd64/libhashtree.a.sha256`:
+          **linux_amd64** - expect the hash in `lib/linux_amd64/libhashtree.a.sha256`:
           ```bash
           docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
             set -eu
@@ -534,7 +538,7 @@ jobs:
           '
           ```
 
-          **linux_arm64** — expect `cat lib/linux_arm64/libhashtree.a.sha256`:
+          **linux_arm64** - expect the hash in `lib/linux_arm64/libhashtree.a.sha256`:
           ```bash
           docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
             set -eu
@@ -549,7 +553,7 @@ jobs:
           '
           ```
 
-          **linux_riscv64** — expect `cat lib/linux_riscv64/libhashtree.a.sha256`:
+          **linux_riscv64** - expect the hash in `lib/linux_riscv64/libhashtree.a.sha256`:
           ```bash
           docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
             set -eu
@@ -565,7 +569,7 @@ jobs:
           ```
 
           > Verified reproducible with gcc 11.4.0 (Ubuntu 22.04). If a digest differs,
-          > confirm your `gcc --version` matches the **Compiler** column above — a
+          > confirm your `gcc --version` matches the **Compiler** column above; a
           > different compiler patch release can change the output.
           """
 

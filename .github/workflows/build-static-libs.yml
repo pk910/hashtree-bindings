@@ -189,7 +189,11 @@ jobs:
           make clean
           # Build with reproducible flags
           export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
-          make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"
+          # Override CFLAGS/ASFLAGS for reproducible builds. We must re-add the
+          # RISC-V -march here because GNU make ignores the Makefile's `+=` for
+          # variables set on the command line, which would otherwise drop the
+          # Zbb/Zknh march and break the rev8/roriw opcodes in the .S files.
+          make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"
           # Copy the library to a simple location
           cp ../build/lib/libhashtree.a ./libhashtree.a
           # Remove non-deterministic archive metadata

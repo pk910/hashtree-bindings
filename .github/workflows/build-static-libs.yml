@@ -106,6 +106,8 @@ jobs:
           strip --strip-debug ./libhashtree.a || true
           # Normalize archive
           ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          gcc --version | head -1 > libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -116,6 +118,7 @@ jobs:
           path: |
             hashtree/src/libhashtree.a
             hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
           retention-days: 7
 
   build-linux-arm64:
@@ -151,6 +154,8 @@ jobs:
           aarch64-linux-gnu-strip --strip-debug ./libhashtree.a || true
           # Normalize archive
           aarch64-linux-gnu-ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          aarch64-linux-gnu-gcc --version | head -1 > libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -161,6 +166,7 @@ jobs:
           path: |
             hashtree/src/libhashtree.a
             hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
           retention-days: 7
 
   build-linux-riscv64:
@@ -200,6 +206,8 @@ jobs:
           riscv64-linux-gnu-strip --strip-debug ./libhashtree.a || true
           # Normalize archive
           riscv64-linux-gnu-ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          riscv64-linux-gnu-gcc --version | head -1 > libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -210,6 +218,7 @@ jobs:
           path: |
             hashtree/src/libhashtree.a
             hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
           retention-days: 7
 
   build-darwin-arm64:
@@ -240,6 +249,12 @@ jobs:
           strip -S ./libhashtree.a || true
           # Normalize archive
           ranlib ./libhashtree.a
+          # macOS BSD ar/ranlib ignore SOURCE_DATE_EPOCH and stamp the real build
+          # time (plus uid/gid) into every member header, breaking reproducibility.
+          # Zero those fields so identical objects yield an identical archive.
+          python3 "$GITHUB_WORKSPACE/.github/scripts/zero_ar_metadata.py" ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          cc --version | head -1 > libhashtree.a.buildinfo
           # Generate checksum
           shasum -a 256 libhashtree.a > libhashtree.a.sha256
 
@@ -250,6 +265,7 @@ jobs:
           path: |
             hashtree/src/libhashtree.a
             hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
           retention-days: 7
 
   build-windows-amd64:
@@ -275,7 +291,12 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
+          # Do NOT force a full system upgrade (`update: true`): it pulls the
+          # latest rolling MinGW gcc on every run, which silently changes the
+          # compiled object code (and thus the archive bytes) even with no
+          # upstream change. Installing without upgrading keeps the toolchain
+          # stable across runs; the exact gcc version is recorded in the bundle.
+          update: false
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
@@ -298,6 +319,8 @@ jobs:
           strip --strip-debug ./libhashtree.a || true
           # Normalize archive
           ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          gcc --version | head -1 > libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -308,6 +331,7 @@ jobs:
           path: |
             hashtree/src/libhashtree.a
             hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
           retention-days: 7
 
   collect-libraries:
@@ -341,11 +365,15 @@ jobs:
 
       - name: Move libraries and checksums to correct locations
         run: |
-          cp libhashtree-linux-amd64/libhashtree.a* lib/linux_amd64/
-          cp libhashtree-linux-arm64/libhashtree.a* lib/linux_arm64/
-          cp libhashtree-linux-riscv64/libhashtree.a* lib/linux_riscv64/
-          cp libhashtree-darwin-arm64/libhashtree.a* lib/darwin_arm64/
-          cp libhashtree-windows-amd64/libhashtree.a* lib/windows_amd64/
+          # Copy only the library and its checksum into lib/ (the .buildinfo
+          # provenance files stay in the download dirs and feed the README step).
+          # Artifact dirs use hyphens (libhashtree-linux-amd64); lib/ dirs use
+          # underscores (linux_amd64).
+          for platform in linux_amd64 linux_arm64 linux_riscv64 darwin_arm64 windows_amd64; do
+            art="libhashtree-${platform//_/-}"
+            cp "$art/libhashtree.a" "lib/$platform/"
+            cp "$art/libhashtree.a.sha256" "lib/$platform/"
+          done
 
       - name: Verify libraries and checksums
         run: |
@@ -381,48 +409,173 @@ jobs:
           WORKFLOW: ${{ github.workflow }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          cat > lib/README.md << EOF
-          # Static Library Bundle
+          export BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          # Pull the exact compiler version recorded by each build job. Artifact
+          # dirs use hyphens (libhashtree-linux-amd64) vs lib/ underscores.
+          read_bi() { head -1 "libhashtree-${1//_/-}/libhashtree.a.buildinfo" 2>/dev/null || echo "unknown"; }
+          export CC_AMD64="$(read_bi linux_amd64)"
+          export CC_ARM64="$(read_bi linux_arm64)"
+          export CC_RISCV64="$(read_bi linux_riscv64)"
+          export CC_DARWIN="$(read_bi darwin_arm64)"
+          export CC_WINDOWS="$(read_bi windows_amd64)"
+
+          python3 - << 'PYEOF'
+          import os
+
+          vals = {
+              "__COMMIT__": os.environ.get("HASHTREE_COMMIT", ""),
+              "__TAG__": os.environ.get("HASHTREE_TAG", ""),
+              "__DATE__": os.environ.get("BUILD_DATE", ""),
+              "__TRIGGER__": os.environ.get("BUILD_TRIGGER", ""),
+              "__REPO__": os.environ.get("REPOSITORY", ""),
+              "__WORKFLOW__": os.environ.get("WORKFLOW", ""),
+              "__RUNID__": os.environ.get("RUN_ID", ""),
+              "__CC_AMD64__": os.environ.get("CC_AMD64", "unknown"),
+              "__CC_ARM64__": os.environ.get("CC_ARM64", "unknown"),
+              "__CC_RISCV64__": os.environ.get("CC_RISCV64", "unknown"),
+              "__CC_DARWIN__": os.environ.get("CC_DARWIN", "unknown"),
+              "__CC_WINDOWS__": os.environ.get("CC_WINDOWS", "unknown"),
+          }
+
+          tpl = r"""# Static Library Bundle
 
           ## Hashtree Version
-          - **Commit:** ${HASHTREE_COMMIT}
-          - **Tag:** ${HASHTREE_TAG}
+          - **Commit:** __COMMIT__
+          - **Tag:** __TAG__
 
           ## Build Information
-          - **Build Date:** ${BUILD_DATE}
-          - **Build Trigger:** ${BUILD_TRIGGER}
-          - **Repository:** ${REPOSITORY}
-          - **Workflow:** ${WORKFLOW}
-          - **Run ID:** ${RUN_ID}
+          - **Build Date:** __DATE__
+          - **Build Trigger:** __TRIGGER__
+          - **Repository:** __REPO__
+          - **Workflow:** __WORKFLOW__
+          - **Run ID:** __RUNID__
 
           ## Contents
           Each platform directory contains:
-          - \`libhashtree.a\` - Static library with platform-specific optimizations
-          - \`libhashtree.a.sha256\` - SHA256 checksum for verification
+          - `libhashtree.a` - Static library with platform-specific optimizations
+          - `libhashtree.a.sha256` - SHA256 checksum for verification
 
           ### Platform Details:
           - **linux_amd64/** - Linux x86_64 with AVX2/AVX512/SHANI optimizations
           - **linux_arm64/** - Linux ARM64 with NEON/SHA2 optimizations
-          - **linux_riscv64/** - Linux RISC-V64 with RISC-V optimizations
+          - **linux_riscv64/** - Linux RISC-V64 with Zbb / Zknh scalar-crypto (runtime-detected)
           - **darwin_arm64/** - macOS Apple Silicon with SHA2 optimizations
           - **windows_amd64/** - Windows x86_64 with AVX2/AVX512/SHANI optimizations
 
           **Note:** macOS Intel (darwin_amd64) is not included - uses pure Go fallback implementation
 
+          ## Build Environment
+
+          Every library is built from the hashtree commit above. `SOURCE_DATE_EPOCH`
+          is exported from that commit's timestamp before each build:
+
+          ```bash
+          export SOURCE_DATE_EPOCH=$(git -C hashtree log -1 --format=%ct)
+          ```
+
+          | Platform | Host / toolchain | Compiler | `make` invocation |
+          |----------|------------------|----------|-------------------|
+          | linux_amd64 | ubuntu-22.04, native | `__CC_AMD64__` | `make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_arm64 | ubuntu-22.04, gcc-aarch64-linux-gnu | `__CC_ARM64__` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_riscv64 | ubuntu-22.04, gcc-riscv64-linux-gnu | `__CC_RISCV64__` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
+          | darwin_arm64 | macos-14, Apple clang | `__CC_DARWIN__` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | windows_amd64 | windows-latest, MSYS2 MINGW64 | `__CC_WINDOWS__` | `make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+
+          After `make`, the archive is copied out of `build/lib/`, stripped, and re-indexed:
+
+          | Platform | Archive normalization |
+          |----------|-----------------------|
+          | linux_amd64 | `strip --strip-debug` then `ranlib` |
+          | linux_arm64 | `aarch64-linux-gnu-strip --strip-debug` then `aarch64-linux-gnu-ranlib` |
+          | linux_riscv64 | `riscv64-linux-gnu-strip --strip-debug` then `riscv64-linux-gnu-ranlib` |
+          | darwin_arm64 | `strip -S` then `ranlib`, then zero `ar` member mtime/uid/gid |
+          | windows_amd64 | `strip --strip-debug` then `ranlib` |
+
           ## Reproducible Builds
-          These libraries are built with reproducible build flags:
-          - \`SOURCE_DATE_EPOCH\` set to commit timestamp
-          - \`-ffile-prefix-map\` to normalize file paths
-          - Debug symbols stripped for determinism
-          - Archive metadata normalized
+
+          Given the same compiler version, the build is deterministic:
+          - `SOURCE_DATE_EPOCH` pins embedded timestamps to the commit time.
+          - `-ffile-prefix-map=$(pwd)=.` strips absolute build paths from the objects.
+          - Debug symbols are stripped and the archive index is rebuilt with `ranlib`.
+          - GNU `ar`/`ranlib` (Linux and Windows/MinGW) write deterministic archives by
+            default. macOS BSD tools do not, so member `mtime`/`uid`/`gid` are zeroed
+            afterwards (see `.github/scripts/zero_ar_metadata.py`).
+
+          Because the object code depends on the exact compiler, a byte-for-byte match
+          requires the **same compiler version** shown in the table above.
 
           ## Verification
-          To verify library integrity:
-          \`\`\`bash
-          sha256sum -c libhashtree.a.sha256
-          \`\`\`
-          EOF
+
+          ### 1. Checksum
+          ```bash
+          cd lib/<platform>
+          sha256sum -c libhashtree.a.sha256   # macOS: shasum -a 256 -c libhashtree.a.sha256
+          ```
+
+          ### 2. Rebuild & compare (Docker)
+          Rebuild from upstream in a clean container and compare the digest with the
+          published one. Each command is self-contained: copy it, run it, and check
+          the printed hash against the matching `libhashtree.a.sha256`. These cover
+          the Linux targets; macOS and Windows use native toolchains that cannot run
+          in a Linux container.
+
+          **linux_amd64** — expect `cat lib/linux_amd64/libhashtree.a.sha256`:
+          ```bash
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+            set -eu
+            apt-get update -qq
+            apt-get install -y -qq git ca-certificates make build-essential >/dev/null
+            git clone -q https://github.com/OffchainLabs/hashtree /h && git -C /h checkout -q "$COMMIT"
+            cd /h/src
+            export SOURCE_DATE_EPOCH=$(git -C /h log -1 --format=%ct)
+            make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic" >/dev/null
+            cp ../build/lib/libhashtree.a . && strip --strip-debug libhashtree.a && ranlib libhashtree.a
+            sha256sum libhashtree.a
+          '
+          ```
+
+          **linux_arm64** — expect `cat lib/linux_arm64/libhashtree.a.sha256`:
+          ```bash
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+            set -eu
+            apt-get update -qq
+            apt-get install -y -qq git ca-certificates make binutils gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu >/dev/null
+            git clone -q https://github.com/OffchainLabs/hashtree /h && git -C /h checkout -q "$COMMIT"
+            cd /h/src
+            export SOURCE_DATE_EPOCH=$(git -C /h log -1 --format=%ct)
+            make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic" >/dev/null
+            cp ../build/lib/libhashtree.a . && aarch64-linux-gnu-strip --strip-debug libhashtree.a && aarch64-linux-gnu-ranlib libhashtree.a
+            sha256sum libhashtree.a
+          '
+          ```
+
+          **linux_riscv64** — expect `cat lib/linux_riscv64/libhashtree.a.sha256`:
+          ```bash
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+            set -eu
+            apt-get update -qq
+            apt-get install -y -qq git ca-certificates make binutils gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu >/dev/null
+            git clone -q https://github.com/OffchainLabs/hashtree /h && git -C /h checkout -q "$COMMIT"
+            cd /h/src
+            export SOURCE_DATE_EPOCH=$(git -C /h log -1 --format=%ct)
+            make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk" >/dev/null
+            cp ../build/lib/libhashtree.a . && riscv64-linux-gnu-strip --strip-debug libhashtree.a && riscv64-linux-gnu-ranlib libhashtree.a
+            sha256sum libhashtree.a
+          '
+          ```
+
+          > Verified reproducible with gcc 11.4.0 (Ubuntu 22.04). If a digest differs,
+          > confirm your `gcc --version` matches the **Compiler** column above — a
+          > different compiler patch release can change the output.
+          """
+
+          for key, value in vals.items():
+              tpl = tpl.replace(key, value)
+          if not tpl.endswith("\n"):
+              tpl += "\n"
+          with open("lib/README.md", "w") as fh:
+              fh.write(tpl)
+          PYEOF
 
       - name: Update main README with hashtree version
         env:

@@ -7,6 +7,7 @@ Go bindings for the high-performance [hashtree](https://github.com/OffchainLabs/
 This repository provides Go bindings for the hashtree library, which implements highly optimized SHA-256 hashing with support for:
 - **x86-64**: AVX2, AVX512, SHA-NI (Intel SHA Extensions)
 - **ARM64**: NEON, ARM SHA2 crypto extensions
+- **RISC-V 64**: Zbb (bit-manipulation), Zknh (scalar SHA-2 crypto) extensions
 - **Fallback**: Pure Go implementation for unsupported architectures
 
 The library automatically selects the best available implementation at runtime based on CPU capabilities.
@@ -74,6 +75,7 @@ The hashtree library provides significant performance improvements over standard
 |----------|-------------|---------------|
 | Linux | amd64 | AVX2, AVX512, SHA-NI |
 | Linux | arm64 | NEON, SHA2 |
+| Linux | riscv64 | Zbb, Zknh (scalar SHA-2 crypto) |
 | macOS | arm64 (Apple Silicon) | SHA2 |
 | Windows | amd64 | AVX2, AVX512, SHA-NI |
 | Others | any | Pure Go fallback |

@@ -1,7 +1,7 @@
 //go:build cgo && windows && amd64
 // +build cgo,windows,amd64
 
-TEXT ·HashtreeHash(SB), 0, $1024-24
+TEXT ·HashtreeHash(SB), 0, $2048-24
 		    MOVQ output+0(FP), CX
 		    MOVQ input+8(FP), DX 
 		    MOVQ R8, R12				    // R12 is saved on windows 

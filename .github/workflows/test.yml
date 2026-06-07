@@ -1,0 +1,115 @@
+name: Test Libraries
+
+# Reusable + standalone test workflow for the static libs.
+#
+# - Standalone (workflow_dispatch): tests the libs committed in lib/ (lib_source=repo).
+# - From the build workflow (workflow_call with lib_source=artifacts): tests the
+#   freshly built libhashtree-* artifacts of the same run before they are published.
+#
+# Coverage: every runtime-detected implementation path is exercised. The Linux
+# job runs the cross-CPU matrix (.github/scripts/test-matrix.sh) under qemu-user
+# in a debian:trixie container (qemu >= 9 is required for the riscv crypto
+# hwprobe path; ubuntu-24.04 ships qemu 8.2.2 which cannot drive it). macOS and
+# Windows get native single-path functional coverage.
+
+on:
+  workflow_call:
+    inputs:
+      lib_source:
+        description: 'Library source: "repo" (committed lib/) or "artifacts" (libhashtree-* from the calling run)'
+        type: string
+        default: repo
+  workflow_dispatch: {}
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux libraries
+        if: inputs.lib_source == 'artifacts'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: libhashtree-linux-*
+
+      - name: Stage libraries into lib/
+        if: inputs.lib_source == 'artifacts'
+        run: |
+          mkdir -p lib/linux_amd64 lib/linux_arm64 lib/linux_riscv64
+          cp libhashtree-linux-amd64/libhashtree.a lib/linux_amd64/
+          cp libhashtree-linux-arm64/libhashtree.a lib/linux_arm64/
+          cp libhashtree-linux-riscv64/libhashtree.a lib/linux_riscv64/
+
+      - name: Run cross-CPU test matrix (qemu 10 via debian:trixie)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w debian:trixie bash -euo pipefail -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq golang-go build-essential \
+              gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user-static >/dev/null
+            bash .github/scripts/test-matrix.sh
+          '
+
+  # Native functional test on macOS Apple Silicon (single path: sha_x1).
+  test-darwin:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download Darwin library
+        if: inputs.lib_source == 'artifacts'
+        uses: actions/download-artifact@v4
+        with:
+          name: libhashtree-darwin-arm64
+          path: dl-darwin
+
+      - name: Stage library into lib/
+        if: inputs.lib_source == 'artifacts'
+        run: |
+          mkdir -p lib/darwin_arm64
+          cp dl-darwin/libhashtree.a lib/darwin_arm64/
+
+      - name: Test (Apple Silicon always has the SHA-2 extension)
+        env:
+          HASHTREE_EXPECT_PATH: sha_x1
+        run: go test -v .
+
+  # Native functional test on Windows (single path = runner CPU).
+  test-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-go
+            make
+
+      - name: Download Windows library
+        if: inputs.lib_source == 'artifacts'
+        uses: actions/download-artifact@v4
+        with:
+          name: libhashtree-windows-amd64
+          path: dl-windows
+
+      - name: Stage library into lib/
+        if: inputs.lib_source == 'artifacts'
+        run: |
+          mkdir -p lib/windows_amd64
+          cp dl-windows/libhashtree.a lib/windows_amd64/
+
+      - name: Test
+        run: go test -v .

@@ -1,0 +1,292 @@
+name: Build & Test
+
+# Builds the per-platform static libs and runs the full test suite against the
+# freshly built artifacts, WITHOUT committing anything.
+#
+# - On pull_request to main: validates that the PR still produces working libs
+#   (builds the pinned submodule commit).
+# - Reusable (workflow_call): the "Update Static Libraries" workflow calls this
+#   with a specific upstream `hashtree_commit`, then commits the result itself.
+#
+# Only the "Update Static Libraries" workflow (schedule / push to main) commits
+# the rebuilt libs; this workflow never does.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      hashtree_commit:
+        description: 'hashtree commit to build (default: the pinned submodule commit)'
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      hashtree_commit:
+        description: 'hashtree commit to build (default: the pinned submodule commit)'
+        type: string
+        default: ''
+
+jobs:
+  build-linux-amd64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Build Linux AMD64 library
+        run: |
+          cd hashtree/src
+          make clean
+          # Build with reproducible flags
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"
+          # Copy the library to a simple location
+          cp ../build/lib/libhashtree.a ./libhashtree.a
+          # Remove non-deterministic archive metadata
+          strip --strip-debug ./libhashtree.a || true
+          # Normalize archive
+          ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          gcc --version | head -1 > libhashtree.a.buildinfo
+          # Generate checksum
+          sha256sum libhashtree.a > libhashtree.a.sha256
+
+      - name: Upload Linux AMD64 library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libhashtree-linux-amd64
+          path: |
+            hashtree/src/libhashtree.a
+            hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
+          retention-days: 7
+
+  build-linux-arm64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
+
+      - name: Install ARM64 cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build Linux ARM64 library
+        run: |
+          cd hashtree/src
+          make clean
+          # Build with reproducible flags
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"
+          # Copy the library to a simple location
+          cp ../build/lib/libhashtree.a ./libhashtree.a
+          # Remove non-deterministic archive metadata
+          aarch64-linux-gnu-strip --strip-debug ./libhashtree.a || true
+          # Normalize archive
+          aarch64-linux-gnu-ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          aarch64-linux-gnu-gcc --version | head -1 > libhashtree.a.buildinfo
+          # Generate checksum
+          sha256sum libhashtree.a > libhashtree.a.sha256
+
+      - name: Upload Linux ARM64 library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libhashtree-linux-arm64
+          path: |
+            hashtree/src/libhashtree.a
+            hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
+          retention-days: 7
+
+  build-linux-riscv64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
+
+      - name: Install RISC-V64 cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu
+
+      - name: Build Linux RISC-V64 library
+        run: |
+          cd hashtree/src
+          make clean
+          # Build with reproducible flags
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          # Override CFLAGS/ASFLAGS for reproducible builds. We must re-add the
+          # RISC-V -march here because GNU make ignores the Makefile's `+=` for
+          # variables set on the command line, which would otherwise drop the
+          # Zbb/Zknh march and break the rev8/roriw opcodes in the .S files.
+          make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"
+          # Copy the library to a simple location
+          cp ../build/lib/libhashtree.a ./libhashtree.a
+          # Remove non-deterministic archive metadata
+          riscv64-linux-gnu-strip --strip-debug ./libhashtree.a || true
+          # Normalize archive
+          riscv64-linux-gnu-ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          riscv64-linux-gnu-gcc --version | head -1 > libhashtree.a.buildinfo
+          # Generate checksum
+          sha256sum libhashtree.a > libhashtree.a.sha256
+
+      - name: Upload Linux RISC-V64 library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libhashtree-linux-riscv64
+          path: |
+            hashtree/src/libhashtree.a
+            hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
+          retention-days: 7
+
+  build-darwin-arm64:
+    runs-on: macos-14  # Apple Silicon macOS
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
+
+      - name: Build Darwin ARM64 library
+        run: |
+          cd hashtree/src
+          make clean
+          # Build with reproducible flags
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"
+          # Copy the library to a simple location
+          cp ../build/lib/libhashtree.a ./libhashtree.a
+          # Remove non-deterministic archive metadata
+          strip -S ./libhashtree.a || true
+          # Normalize archive
+          ranlib ./libhashtree.a
+          # macOS BSD ar/ranlib ignore SOURCE_DATE_EPOCH and stamp the real build
+          # time (plus uid/gid) into every member header, breaking reproducibility.
+          # Zero those fields so identical objects yield an identical archive.
+          python3 "$GITHUB_WORKSPACE/.github/scripts/zero_ar_metadata.py" ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          cc --version | head -1 > libhashtree.a.buildinfo
+          # Generate checksum
+          shasum -a 256 libhashtree.a > libhashtree.a.sha256
+
+      - name: Upload Darwin ARM64 library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libhashtree-darwin-arm64
+          path: |
+            hashtree/src/libhashtree.a
+            hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
+          retention-days: 7
+
+  build-windows-amd64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        shell: bash
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          # Do NOT force a full system upgrade (`update: true`): it pulls the
+          # latest rolling MinGW gcc on every run, which silently changes the
+          # compiled object code (and thus the archive bytes) even with no
+          # upstream change. Installing without upgrading keeps the toolchain
+          # stable across runs; the exact gcc version is recorded in the bundle.
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            make
+
+      - name: Build Windows AMD64 library
+        run: |
+          cd hashtree/src
+          make clean
+          # Build with reproducible flags
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"
+          # Copy the library (Windows might create .lib, normalize to .a)
+          if [ -f "../build/lib/libhashtree.lib" ]; then
+            cp ../build/lib/libhashtree.lib ./libhashtree.a
+          else
+            cp ../build/lib/libhashtree.a ./libhashtree.a
+          fi
+          # Remove non-deterministic archive metadata
+          strip --strip-debug ./libhashtree.a || true
+          # Normalize archive
+          ranlib ./libhashtree.a
+          # Record the exact compiler used, for reproducible verification.
+          gcc --version | head -1 > libhashtree.a.buildinfo
+          # Generate checksum
+          sha256sum libhashtree.a > libhashtree.a.sha256
+
+      - name: Upload Windows AMD64 library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libhashtree-windows-amd64
+          path: |
+            hashtree/src/libhashtree.a
+            hashtree/src/libhashtree.a.sha256
+            hashtree/src/libhashtree.a.buildinfo
+          retention-days: 7
+
+  # Functional + cross-CPU-feature tests against the freshly built artifacts.
+  test:
+    needs: [build-linux-amd64, build-linux-arm64, build-linux-riscv64, build-darwin-arm64, build-windows-amd64]
+    uses: ./.github/workflows/test.yml
+    with:
+      lib_source: artifacts

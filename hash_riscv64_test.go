@@ -47,8 +47,11 @@ func activePath() string {
 	}
 }
 
+// The riscv asm paths are selected inside the C library (not via Go vars), so
+// they can't be force-overridden here; they are covered by the qemu -cpu matrix.
+// Only the pure-Go fallback is forceable from Go.
 var forcedCases = []forcedCase{
-	{"generic", func() func() {
+	{"generic", true, func() func() {
 		saved := supportedCPU
 		supportedCPU = false
 		return func() { supportedCPU = saved }

@@ -197,19 +197,27 @@ func TestErrors(t *testing.T) {
 
 // forcedCase forces a specific implementation by temporarily overriding the
 // detection state. apply() mutates the package vars and returns a restore func.
-// The concrete cases per architecture live in the paths_<arch>_test.go files.
+// supported reports whether the host CPU can actually execute this path's
+// instructions (forcing an unsupported path would fault), so on a given runner
+// only the paths it can run are exercised. The concrete cases per architecture
+// live in the hash_<arch>_test.go files.
 type forcedCase struct {
-	name  string
-	apply func() (restore func())
+	name      string
+	supported bool
+	apply     func() (restore func())
 }
 
-// TestForcedPaths runs the functional core against each implementation that can
-// be forced regardless of the host/emulated CPU (always the pure-Go fallback;
-// additionally neon_x4 on arm64). This guarantees those paths are exercised even
-// when the CPU would naturally select a different one.
+// TestForcedPaths runs the functional core against every dispatch branch the
+// host CPU can execute, by overriding detection regardless of what it would pick
+// naturally. This is how the non-Linux runners (macOS, Windows) — which have no
+// qemu CPU matrix — still get every supported optimized path exercised; under
+// the Linux qemu matrix the unsupported branches simply skip per emulated -cpu.
 func TestForcedPaths(t *testing.T) {
 	for _, fc := range forcedCases {
 		t.Run(fc.name, func(t *testing.T) {
+			if !fc.supported {
+				t.Skipf("host CPU does not support the %q path", fc.name)
+			}
 			restore := fc.apply()
 			defer restore()
 			for _, n := range []int{1, 2, 8, 17, 100, 1000} {

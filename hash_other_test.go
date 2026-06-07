@@ -13,7 +13,7 @@ func activePath() string {
 }
 
 var forcedCases = []forcedCase{
-	{"generic", func() func() {
+	{"generic", true, func() func() {
 		saved := supportedCPU
 		supportedCPU = false
 		return func() { supportedCPU = saved }

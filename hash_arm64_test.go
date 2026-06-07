@@ -17,17 +17,22 @@ func activePath() string {
 }
 
 var forcedCases = []forcedCase{
-	{"generic", func() func() {
+	{"generic", true, func() func() {
 		saved := supportedCPU
 		supportedCPU = false
 		return func() { supportedCPU = saved }
 	}},
-	// NEON is mandatory on every arm64 CPU, so this forced path is valid even on
-	// hosts that also have the SHA-2 extension. It covers neon_x4, which natural
-	// detection never selects on CPUs that have crypto.
-	{"neon_x4", func() func() {
+	// NEON is mandatory on every arm64 CPU, so this path is always runnable; it
+	// covers neon_x4, which natural detection never selects on CPUs with crypto.
+	{"neon_x4", true, func() func() {
 		savedSupported, savedShani := supportedCPU, hasShani
 		supportedCPU, hasShani = true, false
+		return func() { supportedCPU, hasShani = savedSupported, savedShani }
+	}},
+	// sha_x1 requires the SHA-2 crypto extension; gated accordingly.
+	{"sha_x1", hasShani, func() func() {
+		savedSupported, savedShani := supportedCPU, hasShani
+		supportedCPU, hasShani = true, true
 		return func() { supportedCPU, hasShani = savedSupported, savedShani }
 	}},
 }

@@ -334,9 +334,105 @@ jobs:
             hashtree/src/libhashtree.a.buildinfo
           retention-days: 7
 
+  # Cross-CPU-feature functional tests for the Linux libs: every runtime-detected
+  # implementation path is exercised under qemu-user with a selectable -cpu. Runs
+  # in a debian:trixie container because qemu >= 9.0 is required to drive the
+  # riscv crypto hwprobe path (ubuntu-24.04 ships qemu 8.2.2, which cannot).
+  test-linux:
+    runs-on: ubuntu-24.04
+    needs: [check-hashtree-version, build-linux-amd64, build-linux-arm64, build-linux-riscv64]
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: libhashtree-linux-*
+
+      - name: Stage libraries into lib/
+        run: |
+          mkdir -p lib/linux_amd64 lib/linux_arm64 lib/linux_riscv64
+          cp libhashtree-linux-amd64/libhashtree.a lib/linux_amd64/
+          cp libhashtree-linux-arm64/libhashtree.a lib/linux_arm64/
+          cp libhashtree-linux-riscv64/libhashtree.a lib/linux_riscv64/
+
+      - name: Run cross-CPU test matrix (qemu 10 via debian:trixie)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w debian:trixie bash -euo pipefail -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq golang-go build-essential \
+              gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user-static >/dev/null
+            bash .github/scripts/test-matrix.sh
+          '
+
+  # Native functional test on macOS Apple Silicon (single path: sha_x1).
+  test-darwin:
+    runs-on: macos-14
+    needs: [check-hashtree-version, build-darwin-arm64]
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download Darwin library
+        uses: actions/download-artifact@v4
+        with:
+          name: libhashtree-darwin-arm64
+          path: dl-darwin
+
+      - name: Stage library into lib/
+        run: |
+          mkdir -p lib/darwin_arm64
+          cp dl-darwin/libhashtree.a lib/darwin_arm64/
+
+      - name: Test (Apple Silicon always has the SHA-2 extension)
+        env:
+          HASHTREE_EXPECT_PATH: sha_x1
+        run: go test -v .
+
+  # Native functional test on Windows (single path = runner CPU).
+  test-windows:
+    runs-on: windows-latest
+    needs: [check-hashtree-version, build-windows-amd64]
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-go
+            make
+
+      - name: Download Windows library
+        uses: actions/download-artifact@v4
+        with:
+          name: libhashtree-windows-amd64
+          path: dl-windows
+
+      - name: Stage library into lib/
+        run: |
+          mkdir -p lib/windows_amd64
+          cp dl-windows/libhashtree.a lib/windows_amd64/
+
+      - name: Test
+        run: go test -v .
+
   collect-libraries:
     runs-on: ubuntu-latest
-    needs: [check-hashtree-version, build-linux-amd64, build-linux-arm64, build-linux-riscv64, build-darwin-arm64, build-windows-amd64]
+    needs: [check-hashtree-version, build-linux-amd64, build-linux-arm64, build-linux-riscv64, build-darwin-arm64, build-windows-amd64, test-linux, test-darwin, test-windows]
     if: needs.check-hashtree-version.outputs.needs_build == 'true'
     permissions:
       contents: write

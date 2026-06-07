@@ -5,11 +5,11 @@
 - **Tag:** untagged
 
 ## Build Information
-- **Build Date:** 2026-06-07 18:17:58 UTC
-- **Build Trigger:** push
+- **Build Date:** 2026-06-07 18:27:36 UTC
+- **Build Trigger:** workflow_dispatch
 - **Repository:** pk910/hashtree-bindings
 - **Workflow:** Build Static Libraries
-- **Run ID:** 27100797513
+- **Run ID:** 27101023014
 
 ## Contents
 Each platform directory contains:
@@ -40,7 +40,7 @@ export SOURCE_DATE_EPOCH=$(git -C hashtree log -1 --format=%ct)
 | linux_arm64 | ubuntu-22.04, gcc-aarch64-linux-gnu | `aarch64-linux-gnu-gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
 | linux_riscv64 | ubuntu-22.04, gcc-riscv64-linux-gnu | `riscv64-linux-gnu-gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
 | darwin_arm64 | macos-14, Apple clang | `Apple clang version 15.0.0 (clang-1500.3.9.4)` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
-| windows_amd64 | windows-latest, MSYS2 MINGW64 | `gcc.exe (Rev13, Built by MSYS2 project) 15.2.0` | `make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+| windows_amd64 | windows-latest, MSYS2 MINGW64 | `gcc.exe (Rev13, Built by MSYS2 project) 15.2.0` | `make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
 
 After `make`, the archive is copied out of `build/lib/`, stripped, and re-indexed:
 
@@ -80,7 +80,7 @@ the printed hash against the matching `libhashtree.a.sha256`. These cover
 the Linux targets; macOS and Windows use native toolchains that cannot run
 in a Linux container.
 
-**linux_amd64** — expect `cat lib/linux_amd64/libhashtree.a.sha256`:
+**linux_amd64** - expect the hash in `lib/linux_amd64/libhashtree.a.sha256`:
 ```bash
 docker run --rm -e COMMIT=fba14494dada4420440d985c2c516341d9c24b9b ubuntu:22.04 bash -c '
   set -eu
@@ -95,7 +95,7 @@ docker run --rm -e COMMIT=fba14494dada4420440d985c2c516341d9c24b9b ubuntu:22.04 
 '
 ```
 
-**linux_arm64** — expect `cat lib/linux_arm64/libhashtree.a.sha256`:
+**linux_arm64** - expect the hash in `lib/linux_arm64/libhashtree.a.sha256`:
 ```bash
 docker run --rm -e COMMIT=fba14494dada4420440d985c2c516341d9c24b9b ubuntu:22.04 bash -c '
   set -eu
@@ -110,7 +110,7 @@ docker run --rm -e COMMIT=fba14494dada4420440d985c2c516341d9c24b9b ubuntu:22.04 
 '
 ```
 
-**linux_riscv64** — expect `cat lib/linux_riscv64/libhashtree.a.sha256`:
+**linux_riscv64** - expect the hash in `lib/linux_riscv64/libhashtree.a.sha256`:
 ```bash
 docker run --rm -e COMMIT=fba14494dada4420440d985c2c516341d9c24b9b ubuntu:22.04 bash -c '
   set -eu
@@ -126,5 +126,5 @@ docker run --rm -e COMMIT=fba14494dada4420440d985c2c516341d9c24b9b ubuntu:22.04 
 ```
 
 > Verified reproducible with gcc 11.4.0 (Ubuntu 22.04). If a digest differs,
-> confirm your `gcc --version` matches the **Compiler** column above — a
+> confirm your `gcc --version` matches the **Compiler** column above; a
 > different compiler patch release can change the output.

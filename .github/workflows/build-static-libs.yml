@@ -163,6 +163,50 @@ jobs:
             hashtree/src/libhashtree.a.sha256
           retention-days: 7
 
+  build-linux-riscv64:
+    runs-on: ubuntu-22.04
+    needs: check-hashtree-version
+    if: needs.check-hashtree-version.outputs.needs_build == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
+
+      - name: Install RISC-V64 cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-linux-gnu
+
+      - name: Build Linux RISC-V64 library
+        run: |
+          cd hashtree/src
+          make clean
+          # Build with reproducible flags
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"
+          # Copy the library to a simple location
+          cp ../build/lib/libhashtree.a ./libhashtree.a
+          # Remove non-deterministic archive metadata
+          riscv64-linux-gnu-strip --strip-debug ./libhashtree.a || true
+          # Normalize archive
+          riscv64-linux-gnu-ranlib ./libhashtree.a
+          # Generate checksum
+          sha256sum libhashtree.a > libhashtree.a.sha256
+
+      - name: Upload Linux RISC-V64 library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libhashtree-linux-riscv64
+          path: |
+            hashtree/src/libhashtree.a
+            hashtree/src/libhashtree.a.sha256
+          retention-days: 7
 
   build-darwin-arm64:
     runs-on: macos-14  # Apple Silicon macOS
@@ -264,7 +308,7 @@ jobs:
 
   collect-libraries:
     runs-on: ubuntu-latest
-    needs: [check-hashtree-version, build-linux-amd64, build-linux-arm64, build-darwin-arm64, build-windows-amd64]
+    needs: [check-hashtree-version, build-linux-amd64, build-linux-arm64, build-linux-riscv64, build-darwin-arm64, build-windows-amd64]
     if: needs.check-hashtree-version.outputs.needs_build == 'true'
     permissions:
       contents: write
@@ -283,7 +327,7 @@ jobs:
 
       - name: Create lib directories
         run: |
-          mkdir -p lib/{linux_amd64,linux_arm64,darwin_arm64,windows_amd64}
+          mkdir -p lib/{linux_amd64,linux_arm64,linux_riscv64,darwin_arm64,windows_amd64}
 
       - name: Download all libraries
         uses: actions/download-artifact@v4
@@ -295,6 +339,7 @@ jobs:
         run: |
           cp libhashtree-linux-amd64/libhashtree.a* lib/linux_amd64/
           cp libhashtree-linux-arm64/libhashtree.a* lib/linux_arm64/
+          cp libhashtree-linux-riscv64/libhashtree.a* lib/linux_riscv64/
           cp libhashtree-darwin-arm64/libhashtree.a* lib/darwin_arm64/
           cp libhashtree-windows-amd64/libhashtree.a* lib/windows_amd64/
 
@@ -303,11 +348,12 @@ jobs:
           echo "=== Library Information ==="
           echo "Linux AMD64:" && file lib/linux_amd64/libhashtree.a
           echo "Linux ARM64:" && file lib/linux_arm64/libhashtree.a
+          echo "Linux RISC-V64:" && file lib/linux_riscv64/libhashtree.a
           echo "Darwin ARM64:" && file lib/darwin_arm64/libhashtree.a
           echo "Windows AMD64:" && file lib/windows_amd64/libhashtree.a
           echo ""
           echo "=== Checksum Verification ==="
-          for platform in linux_amd64 linux_arm64 darwin_arm64 windows_amd64; do
+          for platform in linux_amd64 linux_arm64 linux_riscv64 darwin_arm64 windows_amd64; do
             echo "Verifying $platform..."
             cd lib/$platform
             if command -v sha256sum >/dev/null; then
@@ -354,6 +400,7 @@ jobs:
           ### Platform Details:
           - **linux_amd64/** - Linux x86_64 with AVX2/AVX512/SHANI optimizations
           - **linux_arm64/** - Linux ARM64 with NEON/SHA2 optimizations
+          - **linux_riscv64/** - Linux RISC-V64 with RISC-V optimizations
           - **darwin_arm64/** - macOS Apple Silicon with SHA2 optimizations
           - **windows_amd64/** - Windows x86_64 with AVX2/AVX512/SHANI optimizations
 

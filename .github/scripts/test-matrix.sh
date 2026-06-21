@@ -33,22 +33,13 @@ build() { # arch cc
 	fi
 }
 
-run() { # arch qemu cpu expect [xfail]
-	local arch="$1" qemu="$2" cpu="$3" expect="$4" xfail="${5:-0}"
+run() { # arch qemu cpu expect
+	local arch="$1" qemu="$2" cpu="$3" expect="$4"
 	local log="$BIN_DIR/$arch.log"
 	HASHTREE_EXPECT_PATH="$expect" "$qemu" -cpu "$cpu" "$BIN_DIR/$arch.test" \
 		-test.run 'TestHash|TestZeroHashChain|TestErrors|TestForcedPaths|TestActivePathMatchesEnv' \
 		>"$log" 2>&1
 	local rc=$?
-	if [ "$xfail" = "1" ]; then
-		if [ $rc -ne 0 ]; then
-			printf '  XFAIL %-8s %-42s -> %s (known upstream Zbb-detect bug)\n' "$arch" "$cpu" "$expect"
-		else
-			printf '  XPASS %-8s %-42s -> %s  (upstream fixed? remove the xfail)\n' "$arch" "$cpu" "$expect"
-			fail=1
-		fi
-		return
-	fi
 	if [ $rc -eq 0 ]; then
 		printf '  PASS  %-8s %-42s -> %s\n' "$arch" "$cpu" "$expect"
 	else
@@ -64,17 +55,11 @@ build arm64   aarch64-linux-gnu-gcc
 build riscv64 riscv64-linux-gnu-gcc
 
 echo "=== matrix ==="
-# amd64: qemu64 has no AVX state -> pure-Go fallback; named models carry the
-# OSXSAVE/XCR0 state that github.com/klauspost/cpuid requires.
 run amd64   qemu-x86_64  'qemu64'                                  generic
 run amd64   qemu-x86_64  'Haswell'                                 avx2
 run amd64   qemu-x86_64  'EPYC'                                    shani
-# arm64: only the SHA-2 path is reachable via a -cpu (every qemu model reports
-# SHA2); neon_x4 and the fallback are exercised by the inline forced tests.
 run arm64   qemu-aarch64 'max'                                     sha_x1
-# riscv64: scalar is xfail until upstream fixes its riscv_hwprobe bit constants
-# (it mis-selects the Zbb impl on a non-Zbb CPU -> SIGILL). See upstream report.
-run riscv64 qemu-riscv64 'rv64,zbb=false'                          scalar  1
+run riscv64 qemu-riscv64 'rv64,zbb=false'                          scalar
 run riscv64 qemu-riscv64 'rv64,zbb=true'                           zbb
 run riscv64 qemu-riscv64 'rv64,zbb=true,zknh=true,zbkb=true'       crypto
 

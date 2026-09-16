@@ -1,15 +1,15 @@
 # Static Library Bundle
 
 ## Hashtree Version
-- **Commit:** 1abb305ff9f79fdd0ed40bb3b0023af3d3749ffa
+- **Commit:** fc9afb29e405a3020ba860311aa5662e2a54e061
 - **Tag:** untagged
 
 ## Build Information
-- **Build Date:** 2026-09-12 06:55:45 UTC
+- **Build Date:** 2026-09-16 07:19:28 UTC
 - **Build Trigger:** schedule
 - **Repository:** pk910/hashtree-bindings
 - **Workflow:** Update Static Libraries
-- **Run ID:** 34679301571
+- **Run ID:** 35067723610
 
 ## Contents
 Each platform directory contains:
@@ -82,7 +82,7 @@ in a Linux container.
 
 **linux_amd64** - expect the hash in `lib/linux_amd64/libhashtree.a.sha256`:
 ```bash
-docker run --rm -e COMMIT=1abb305ff9f79fdd0ed40bb3b0023af3d3749ffa ubuntu:22.04 bash -c '
+docker run --rm -e COMMIT=fc9afb29e405a3020ba860311aa5662e2a54e061 ubuntu:22.04 bash -c '
   set -eu
   apt-get update -qq
   apt-get install -y -qq git ca-certificates make build-essential >/dev/null
@@ -97,7 +97,7 @@ docker run --rm -e COMMIT=1abb305ff9f79fdd0ed40bb3b0023af3d3749ffa ubuntu:22.04 
 
 **linux_arm64** - expect the hash in `lib/linux_arm64/libhashtree.a.sha256`:
 ```bash
-docker run --rm -e COMMIT=1abb305ff9f79fdd0ed40bb3b0023af3d3749ffa ubuntu:22.04 bash -c '
+docker run --rm -e COMMIT=fc9afb29e405a3020ba860311aa5662e2a54e061 ubuntu:22.04 bash -c '
   set -eu
   apt-get update -qq
   apt-get install -y -qq git ca-certificates make binutils gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu >/dev/null
@@ -112,7 +112,7 @@ docker run --rm -e COMMIT=1abb305ff9f79fdd0ed40bb3b0023af3d3749ffa ubuntu:22.04 
 
 **linux_riscv64** - expect the hash in `lib/linux_riscv64/libhashtree.a.sha256`:
 ```bash
-docker run --rm -e COMMIT=1abb305ff9f79fdd0ed40bb3b0023af3d3749ffa ubuntu:22.04 bash -c '
+docker run --rm -e COMMIT=fc9afb29e405a3020ba860311aa5662e2a54e061 ubuntu:22.04 bash -c '
   set -eu
   apt-get update -qq
   apt-get install -y -qq git ca-certificates make binutils gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu >/dev/null

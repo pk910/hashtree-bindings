@@ -4,6 +4,6 @@
 package cgo
 
 /*
-#cgo LDFLAGS: -L../lib/linux_amd64 -lhashtree
+#cgo LDFLAGS: -L../../lib/linux_amd64 -lhashtree
 */
 import "C"

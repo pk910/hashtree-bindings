@@ -1,7 +1,8 @@
 name: Build & Test
 
 # Builds the per-platform static libs and runs the full test suite against the
-# freshly built artifacts, WITHOUT committing anything.
+# freshly built artifacts, WITHOUT committing anything. The test jobs also keep
+# the Go/assembly sources taken from upstream honest (see test.yml).
 #
 # - On pull_request to main: validates that the PR still produces working libs
 #   (builds the pinned submodule commit).
@@ -29,7 +30,7 @@ on:
 
 jobs:
   build-linux-amd64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +63,8 @@ jobs:
           ranlib ./libhashtree.a
           # Record the exact compiler used, for reproducible verification.
           gcc --version | head -1 > libhashtree.a.buildinfo
+          # ... and the Ubuntu release of the runner, to rebuild in the same image.
+          (. /etc/os-release && echo "$VERSION_ID") >> libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -76,7 +79,7 @@ jobs:
           retention-days: 7
 
   build-linux-arm64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,6 +112,8 @@ jobs:
           aarch64-linux-gnu-ranlib ./libhashtree.a
           # Record the exact compiler used, for reproducible verification.
           aarch64-linux-gnu-gcc --version | head -1 > libhashtree.a.buildinfo
+          # ... and the Ubuntu release of the runner, to rebuild in the same image.
+          (. /etc/os-release && echo "$VERSION_ID") >> libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -123,7 +128,7 @@ jobs:
           retention-days: 7
 
   build-linux-riscv64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,9 +154,11 @@ jobs:
           export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           # Override CFLAGS/ASFLAGS for reproducible builds. We must re-add the
           # RISC-V -march here because GNU make ignores the Makefile's `+=` for
-          # variables set on the command line, which would otherwise drop the
-          # Zbb/Zknh march and break the rev8/roriw opcodes in the .S files.
-          make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"
+          # variables set on the command line. As in the Makefile, the C code is
+          # built for the RV64GC baseline (it runs on every CPU, and the
+          # compiler's own default may be a newer profile); only the assembly,
+          # which is selected at runtime, gets the Zbb/Zk opcodes.
+          make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"
           # Copy the library to a simple location
           cp ../build/lib/libhashtree.a ./libhashtree.a
           # Remove non-deterministic archive metadata
@@ -160,6 +167,8 @@ jobs:
           riscv64-linux-gnu-ranlib ./libhashtree.a
           # Record the exact compiler used, for reproducible verification.
           riscv64-linux-gnu-gcc --version | head -1 > libhashtree.a.buildinfo
+          # ... and the Ubuntu release of the runner, to rebuild in the same image.
+          (. /etc/os-release && echo "$VERSION_ID") >> libhashtree.a.buildinfo
           # Generate checksum
           sha256sum libhashtree.a > libhashtree.a.sha256
 
@@ -174,7 +183,7 @@ jobs:
           retention-days: 7
 
   build-darwin-arm64:
-    runs-on: macos-14  # Apple Silicon macOS
+    runs-on: macos-latest  # Apple Silicon macOS
     steps:
       - uses: actions/checkout@v4
         with:
@@ -290,3 +299,4 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       lib_source: artifacts
+      hashtree_commit: ${{ inputs.hashtree_commit }}

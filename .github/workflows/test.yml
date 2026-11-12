@@ -6,10 +6,17 @@ name: Test Libraries
 # - From the build workflow (workflow_call with lib_source=artifacts): tests the
 #   freshly built libhashtree-* artifacts of the same run before they are published.
 #
+# The Go/assembly sources taken from upstream are handled the same way in every
+# job (internal/upstreamsync): with a `hashtree_commit` they are regenerated from
+# that commit, so new libs are tested together with the sources they will be
+# committed with; without one they are only checked to be up to date with the
+# pinned submodule.
+#
 # Coverage: every runtime-detected implementation path is exercised. The Linux
 # job runs the cross-CPU matrix (.github/scripts/test-matrix.sh) under qemu-user
-# in a debian:trixie container (qemu >= 9 is required for the riscv crypto
-# hwprobe path; ubuntu-24.04 ships qemu 8.2.2 which cannot drive it). macOS and
+# in a debian:trixie container: its qemu (>= 9) can drive the riscv crypto hwprobe
+# path, and its RISC-V userland runs on plain RV64GC CPUs, unlike Ubuntu's, which
+# needs RVA23. macOS and
 # Windows get native single-path functional coverage.
 
 on:
@@ -19,13 +26,27 @@ on:
         description: 'Library source: "repo" (committed lib/) or "artifacts" (libhashtree-* from the calling run)'
         type: string
         default: repo
+      hashtree_commit:
+        description: 'hashtree commit to regenerate the upstream sources from (default: check against the pinned submodule)'
+        type: string
+        default: ''
   workflow_dispatch: {}
 
 jobs:
   test-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        shell: bash
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
 
       - name: Download Linux libraries
         if: inputs.lib_source == 'artifacts'
@@ -43,23 +64,39 @@ jobs:
 
       - name: Run cross-CPU test matrix (qemu 10 via debian:trixie)
         run: |
-          docker run --rm -v "$PWD:/w" -w /w debian:trixie bash -euo pipefail -c '
+          docker run --rm -v "$PWD:/w" -w /w \
+            -e SYNC_ARGS="${{ inputs.hashtree_commit == '' && '-check' || '' }}" \
+            debian:trixie bash -euo pipefail -c '
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
             apt-get install -y -qq ca-certificates golang-go build-essential \
               gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user-static >/dev/null
+            go run ./internal/upstreamsync $SYNC_ARGS
             bash .github/scripts/test-matrix.sh
           '
 
   # Native functional test on macOS Apple Silicon (single path: sha_x1).
   test-darwin:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        shell: bash
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - name: Sync upstream sources
+        run: go run ./internal/upstreamsync ${{ inputs.hashtree_commit == '' && '-check' || '' }}
 
       - name: Download Darwin library
         if: inputs.lib_source == 'artifacts'
@@ -87,6 +124,16 @@ jobs:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout target hashtree commit
+        if: inputs.hashtree_commit != ''
+        shell: bash
+        run: |
+          cd hashtree
+          git fetch origin
+          git checkout ${{ inputs.hashtree_commit }}
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -97,6 +144,9 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-go
             make
+
+      - name: Sync upstream sources
+        run: go run ./internal/upstreamsync ${{ inputs.hashtree_commit == '' && '-check' || '' }}
 
       - name: Download Windows library
         if: inputs.lib_source == 'artifacts'

@@ -63,5 +63,16 @@ run riscv64 qemu-riscv64 'rv64,zbb=false'                          scalar
 run riscv64 qemu-riscv64 'rv64,zbb=true'                           zbb
 run riscv64 qemu-riscv64 'rv64,zbb=true,zknh=true,zbkb=true'       crypto
 
+# Builds without cgo cannot link the static library and must fall back to pure
+# Go on every platform. Run the whole suite that way, natively.
+echo "=== no cgo (pure-Go fallback) ==="
+if CGO_ENABLED=0 HASHTREE_EXPECT_PATH=generic go test -count=1 . >"$BIN_DIR/nocgo.log" 2>&1; then
+	echo "  PASS  CGO_ENABLED=0"
+else
+	echo "  FAIL  CGO_ENABLED=0"
+	tail -20 "$BIN_DIR/nocgo.log" | sed 's/^/        /'
+	fail=1
+fi
+
 echo "=== result: $([ $fail -eq 0 ] && echo ALL GREEN || echo FAILURES) ==="
 exit $fail

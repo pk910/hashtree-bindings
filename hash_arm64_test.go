@@ -4,7 +4,7 @@ package hashtree
 
 // activePath reports which implementation the wrapper will dispatch to, mirroring
 // wrapper_arm64.s: the SHA-2 crypto path when available, else NEON. NEON is the
-// guaranteed baseline on ARMv8 (see bindings_linux_arm64.go), so supportedCPU is
+// guaranteed baseline on ARMv8 (see bindings_arm64.go), so supportedCPU is
 // always true; the generic branch only matters under the forced-fallback test.
 func activePath() string {
 	if !supportedCPU {

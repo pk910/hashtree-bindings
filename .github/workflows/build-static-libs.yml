@@ -26,22 +26,33 @@ jobs:
       hashtree_commit: ${{ steps.check.outputs.hashtree_commit }}
       hashtree_short: ${{ steps.check.outputs.hashtree_short }}
       hashtree_tag: ${{ steps.check.outputs.hashtree_tag }}
+      release_tag: ${{ steps.target.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Fetch latest hashtree from upstream
+      # Normally the tip of upstream main is built. If upstream has published a
+      # version tag we have not released yet, that tagged commit is built
+      # instead, and the release job below publishes it under the same tag.
+      - name: Pick the upstream commit to build
+        id: target
         run: |
-          cd hashtree
-          git fetch origin main
-          git checkout origin/main
-          cd ..
+          set -o pipefail
+          # The submodule checkout is shallow; tags and ancestry need the history.
+          git -C hashtree fetch --tags --unshallow origin main ||
+            git -C hashtree fetch --tags origin main
+          OUR_TAGS="$(git ls-remote --tags --refs origin | sed 's#.*refs/tags/##')"
+          STORED="$(cat lib/HASHTREE_VERSION 2>/dev/null || true)"
+          bash .github/scripts/pick-upstream-target.sh hashtree "$STORED" "$OUR_TAGS" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Check out the picked hashtree commit
+        run: git -C hashtree checkout ${{ steps.target.outputs.commit }}
 
       - name: Check if hashtree version changed
         id: check
         run: |
-          # Get latest hashtree commit (after updating to upstream)
+          # The hashtree commit picked above
           HASHTREE_COMMIT=$(git -C hashtree rev-parse HEAD)
           HASHTREE_SHORT=$(git -C hashtree rev-parse --short HEAD)
 
@@ -97,6 +108,7 @@ jobs:
     if: needs.check-hashtree-version.outputs.needs_build == 'true'
     permissions:
       contents: write
+      actions: write  # to start Build & Test on the pushed commit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,6 +121,15 @@ jobs:
           git fetch origin
           git checkout ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
           cd ..
+
+      # The Go and assembly sources come from the same upstream commit as the
+      # libs, so both are updated in one commit and cannot get out of step.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate upstream Go/assembly sources
+        run: go run ./internal/upstreamsync
 
       - name: Create lib directories
         run: |
@@ -174,6 +195,8 @@ jobs:
             f="libhashtree-${1//_/-}/libhashtree.a.buildinfo"
             if [ -f "$f" ]; then head -1 "$f" | tr -d '\r'; else echo "unknown"; fi
           }
+          # Second line of the Linux build info: the Ubuntu release of the runner.
+          export UBUNTU_RELEASE="$(sed -n 2p libhashtree-linux-amd64/libhashtree.a.buildinfo | tr -d '\r')"
           export CC_AMD64="$(read_bi linux_amd64)"
           export CC_ARM64="$(read_bi linux_arm64)"
           export CC_RISCV64="$(read_bi linux_riscv64)"
@@ -191,6 +214,7 @@ jobs:
               "__REPO__": os.environ.get("REPOSITORY", ""),
               "__WORKFLOW__": os.environ.get("WORKFLOW", ""),
               "__RUNID__": os.environ.get("RUN_ID", ""),
+              "__UBUNTU__": os.environ.get("UBUNTU_RELEASE", "") or "latest",
               "__CC_AMD64__": os.environ.get("CC_AMD64", "unknown"),
               "__CC_ARM64__": os.environ.get("CC_ARM64", "unknown"),
               "__CC_RISCV64__": os.environ.get("CC_RISCV64", "unknown"),
@@ -236,10 +260,10 @@ jobs:
 
           | Platform | Host / toolchain | Compiler | `make` invocation |
           |----------|------------------|----------|-------------------|
-          | linux_amd64 | ubuntu-22.04, native | `__CC_AMD64__` | `make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
-          | linux_arm64 | ubuntu-22.04, gcc-aarch64-linux-gnu | `__CC_ARM64__` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
-          | linux_riscv64 | ubuntu-22.04, gcc-riscv64-linux-gnu | `__CC_RISCV64__` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
-          | darwin_arm64 | macos-14, Apple clang | `__CC_DARWIN__` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_amd64 | ubuntu-latest (__UBUNTU__), native | `__CC_AMD64__` | `make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_arm64 | ubuntu-latest (__UBUNTU__), gcc-aarch64-linux-gnu | `__CC_ARM64__` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_riscv64 | ubuntu-latest (__UBUNTU__), gcc-riscv64-linux-gnu | `__CC_RISCV64__` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
+          | darwin_arm64 | macos-latest, Apple clang | `__CC_DARWIN__` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
           | windows_amd64 | windows-latest, MSYS2 MINGW64 | `__CC_WINDOWS__` | `make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
 
           After `make`, the archive is copied out of `build/lib/`, stripped, and re-indexed:
@@ -282,7 +306,7 @@ jobs:
 
           **linux_amd64** - expect the hash in `lib/linux_amd64/libhashtree.a.sha256`:
           ```bash
-          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:__UBUNTU__ bash -c '
             set -eu
             apt-get update -qq
             apt-get install -y -qq git ca-certificates make build-essential >/dev/null
@@ -297,7 +321,7 @@ jobs:
 
           **linux_arm64** - expect the hash in `lib/linux_arm64/libhashtree.a.sha256`:
           ```bash
-          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:__UBUNTU__ bash -c '
             set -eu
             apt-get update -qq
             apt-get install -y -qq git ca-certificates make binutils gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu >/dev/null
@@ -312,22 +336,21 @@ jobs:
 
           **linux_riscv64** - expect the hash in `lib/linux_riscv64/libhashtree.a.sha256`:
           ```bash
-          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:__UBUNTU__ bash -c '
             set -eu
             apt-get update -qq
             apt-get install -y -qq git ca-certificates make binutils gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu >/dev/null
             git clone -q https://github.com/OffchainLabs/hashtree /h && git -C /h checkout -q "$COMMIT"
             cd /h/src
             export SOURCE_DATE_EPOCH=$(git -C /h log -1 --format=%ct)
-            make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk" >/dev/null
+            make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk" >/dev/null
             cp ../build/lib/libhashtree.a . && riscv64-linux-gnu-strip --strip-debug libhashtree.a && riscv64-linux-gnu-ranlib libhashtree.a
             sha256sum libhashtree.a
           '
           ```
 
-          > Verified reproducible with gcc 11.4.0 (Ubuntu 22.04). If a digest differs,
-          > confirm your `gcc --version` matches the **Compiler** column above; a
-          > different compiler patch release can change the output.
+          > If a digest differs, confirm your `gcc --version` matches the **Compiler**
+          > column above; a different compiler patch release can change the output.
           """
 
           for key, value in vals.items():
@@ -376,6 +399,7 @@ jobs:
           PYEOF
 
       - name: Commit and push changes
+        id: commit
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         env:
           HASHTREE_SHORT: ${{ needs.check-hashtree-version.outputs.hashtree_short }}
@@ -385,7 +409,8 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add hashtree lib/ README.md
+          # Root-level sources only: the upstream-derived files all live there.
+          git add hashtree lib/ README.md *.go *.s
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
@@ -396,7 +421,17 @@ jobs:
           Hashtree version: ${HASHTREE_TAG}
           Workflow run: ${WORKFLOW_URL}"
             git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # A push made with the workflow token starts no workflows, so the commit
+      # above would never get the regular Build & Test run a pushed commit gets.
+      # Starting a workflow explicitly is allowed with that token.
+      - name: Run Build & Test on the pushed commit
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref "$GITHUB_REF_NAME"
 
       - name: Upload static library bundle
         uses: actions/upload-artifact@v4
@@ -404,3 +439,41 @@ jobs:
           name: hashtree-static-libs-${{ github.sha }}
           path: lib/
           retention-days: 30
+
+  # An upstream release is published here under the same version tag, on the
+  # commit that carries the libs and sources built from it.
+  release:
+    runs-on: ubuntu-latest
+    needs: [check-hashtree-version, collect-libraries]
+    # collect-libraries is skipped when the libs were already built from the
+    # tagged commit; then there is nothing to commit, only the release to make.
+    if: >-
+      always() &&
+      needs.check-hashtree-version.outputs.release_tag != '' &&
+      github.ref == 'refs/heads/main' &&
+      (needs.collect-libraries.result == 'success' ||
+       needs.check-hashtree-version.outputs.needs_build == 'false')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The branch tip, which includes the commit pushed by collect-libraries.
+          ref: ${{ github.ref_name }}
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check-hashtree-version.outputs.release_tag }}
+          HASHTREE_COMMIT: ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
+        run: |
+          # Only release what was really built from the upstream release.
+          if [ "$(cat lib/HASHTREE_VERSION)" != "$HASHTREE_COMMIT" ]; then
+            echo "::error::lib/ is not built from hashtree $TAG ($HASHTREE_COMMIT)"
+            exit 1
+          fi
+
+          gh release create "$TAG" --target "$(git rev-parse HEAD)" --title "$TAG" --notes \
+            "Go bindings for [hashtree $TAG](https://github.com/OffchainLabs/hashtree/releases/tag/$TAG).
+
+          Static libraries and sources are built from hashtree commit [\`${HASHTREE_COMMIT:0:7}\`](https://github.com/OffchainLabs/hashtree/commit/$HASHTREE_COMMIT)."

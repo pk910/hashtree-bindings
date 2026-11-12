@@ -97,6 +97,7 @@ jobs:
     if: needs.check-hashtree-version.outputs.needs_build == 'true'
     permissions:
       contents: write
+      actions: write  # to start Build & Test on the pushed commit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -387,6 +388,7 @@ jobs:
           PYEOF
 
       - name: Commit and push changes
+        id: commit
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         env:
           HASHTREE_SHORT: ${{ needs.check-hashtree-version.outputs.hashtree_short }}
@@ -408,7 +410,17 @@ jobs:
           Hashtree version: ${HASHTREE_TAG}
           Workflow run: ${WORKFLOW_URL}"
             git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # A push made with the workflow token starts no workflows, so the commit
+      # above would never get the regular Build & Test run a pushed commit gets.
+      # Starting a workflow explicitly is allowed with that token.
+      - name: Run Build & Test on the pushed commit
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref "$GITHUB_REF_NAME"
 
       - name: Upload static library bundle
         uses: actions/upload-artifact@v4

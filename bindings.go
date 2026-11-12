@@ -17,8 +17,8 @@ var (
 	ErrDigestsNotMultipleOf32 = errors.New("digests not multiple of 32 bytes")
 )
 
-var supportedCPU = false
-var hashtreeHash func(output *byte, input *byte, count uint64)
+//go:noescape
+func HashtreeHash(output *byte, input *byte, count uint64)
 
 const (
 	chunksPerAsmIter = 32 // widest dispatch path (AVX-512), so no path is left a scalar tail
@@ -26,17 +26,16 @@ const (
 	maxAsmChunks     = chunksPerAsmIter * maxAsmIters
 )
 
-// hashChunked bounds how many chunks reach a single hashtreeHash call: the
-// assembly is not asynchronously preemptible, so hashing a whole layer in one
-// call blocks every GC for its duration.
+// hashChunked bounds one HashtreeHash call: the assembly is not asynchronously
+// preemptible, so a whole layer in one call blocks every GC for its duration.
 func hashChunked(digests [][32]byte, chunks [][32]byte) {
 	for len(chunks) > maxAsmChunks {
-		hashtreeHash(&digests[0][0], &chunks[0][0], maxAsmChunks/2)
+		HashtreeHash(&digests[0][0], &chunks[0][0], maxAsmChunks/2)
 		chunks = chunks[maxAsmChunks:]
 		digests = digests[maxAsmChunks/2:]
 	}
 	if len(chunks) > 1 {
-		hashtreeHash(&digests[0][0], &chunks[0][0], uint64(len(chunks)/2))
+		HashtreeHash(&digests[0][0], &chunks[0][0], uint64(len(chunks)/2))
 	}
 }
 

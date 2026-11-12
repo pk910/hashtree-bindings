@@ -110,6 +110,15 @@ jobs:
           git checkout ${{ needs.check-hashtree-version.outputs.hashtree_commit }}
           cd ..
 
+      # The Go and assembly sources come from the same upstream commit as the
+      # libs, so both are updated in one commit and cannot get out of step.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate upstream Go/assembly sources
+        run: go run ./internal/upstreamsync
+
       - name: Create lib directories
         run: |
           mkdir -p lib/{linux_amd64,linux_arm64,linux_riscv64,darwin_arm64,windows_amd64}
@@ -385,7 +394,8 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add hashtree lib/ README.md
+          # Root-level sources only: the upstream-derived files all live there.
+          git add hashtree lib/ README.md *.go *.s
 
           if git diff --cached --quiet; then
             echo "No changes to commit"

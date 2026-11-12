@@ -93,7 +93,27 @@ The hashtree library provides significant performance improvements over standard
 This repository uses GitHub Actions to automatically build and update static libraries from the hashtree submodule. The workflow:
 1. Runs daily to check for upstream changes
 2. Builds platform-specific static libraries
-3. Automatically commits updates when libraries change
+3. Regenerates the Go and assembly sources from the same upstream commit
+4. Automatically commits updates when libraries or sources change
+
+### Relationship to Upstream
+
+The only intended difference from upstream is the packaging: upstream links `.syso` objects, this module links the static libraries in `lib/` through cgo. Everything else is taken from the `hashtree` submodule by `internal/upstreamsync` and must not be edited here:
+
+| Files | Origin |
+|-------|--------|
+| `bindings.go`, `sha256_1_generic.go`, `bindings_test.go` | Copied from upstream unchanged |
+| `bindings_<arch>.go`, `wrapper_*.s` | Copied from upstream; only the build constraint is narrowed to cgo builds on platforms with a static library. |
+| `link.go`, `cgo/`, `lib/` | Ours: link the static library |
+| `fallback.go`, `fallback.s` | Ours: pure-Go fallback for builds without cgo or without a library for the platform |
+| `hash_*_test.go` | Ours: additional tests for every dispatch path |
+
+```bash
+go generate ./...                        # regenerate from the submodule
+go run ./internal/upstreamsync -check    # verify, as CI does
+```
+
+The tool fails if upstream adds or removes a source file, so a change upstream cannot be missed silently.
 
 ### Manual Build
 

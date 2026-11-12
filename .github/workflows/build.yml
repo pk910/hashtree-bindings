@@ -1,7 +1,8 @@
 name: Build & Test
 
 # Builds the per-platform static libs and runs the full test suite against the
-# freshly built artifacts, WITHOUT committing anything.
+# freshly built artifacts, WITHOUT committing anything. The test jobs also keep
+# the Go/assembly sources taken from upstream honest (see test.yml).
 #
 # - On pull_request to main: validates that the PR still produces working libs
 #   (builds the pinned submodule commit).
@@ -290,3 +291,4 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       lib_source: artifacts
+      hashtree_commit: ${{ inputs.hashtree_commit }}

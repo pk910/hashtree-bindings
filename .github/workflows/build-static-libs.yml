@@ -248,7 +248,7 @@ jobs:
           | linux_amd64 | ubuntu-22.04, native | `__CC_AMD64__` | `make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
           | linux_arm64 | ubuntu-22.04, gcc-aarch64-linux-gnu | `__CC_ARM64__` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
           | linux_riscv64 | ubuntu-22.04, gcc-riscv64-linux-gnu | `__CC_RISCV64__` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
-          | darwin_arm64 | macos-14, Apple clang | `__CC_DARWIN__` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | darwin_arm64 | macos-latest, Apple clang | `__CC_DARWIN__` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
           | windows_amd64 | windows-latest, MSYS2 MINGW64 | `__CC_WINDOWS__` | `make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
 
           After `make`, the archive is copied out of `build/lib/`, stripped, and re-indexed:

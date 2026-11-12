@@ -175,7 +175,7 @@ jobs:
           retention-days: 7
 
   build-darwin-arm64:
-    runs-on: macos-14  # Apple Silicon macOS
+    runs-on: macos-latest  # Apple Silicon macOS
     steps:
       - uses: actions/checkout@v4
         with:

@@ -76,7 +76,7 @@ jobs:
 
   # Native functional test on macOS Apple Silicon (single path: sha_x1).
   test-darwin:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:

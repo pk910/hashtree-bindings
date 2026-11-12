@@ -104,7 +104,7 @@ The only intended difference from upstream is the packaging: upstream links `.sy
 |-------|--------|
 | `bindings.go`, `sha256_1_generic.go`, `bindings_test.go` | Copied from upstream unchanged |
 | `bindings_<arch>.go`, `wrapper_*.s` | Copied from upstream; only the build constraint is narrowed to cgo builds on platforms with a static library. |
-| `link.go`, `cgo/`, `lib/` | Ours: link the static library |
+| `link.go`, `internal/cgo/`, `lib/` | Ours: link the static library |
 | `fallback.go`, `fallback.s` | Ours: pure-Go fallback for builds without cgo or without a library for the platform |
 | `hash_*_test.go` | Ours: additional tests for every dispatch path |
 

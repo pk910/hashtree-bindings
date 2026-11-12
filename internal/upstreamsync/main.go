@@ -27,7 +27,7 @@ import (
 )
 
 // nativeConstraint selects the builds that link a static library from lib/.
-// It must list exactly the platforms that have a cgo/cgo_<os>_<arch>.go file.
+// It must list exactly the platforms that have an internal/cgo/cgo_<os>_<arch>.go file.
 // Every other build uses the pure-Go fallback (fallback.go).
 const nativeConstraint = "cgo && ((linux && (amd64 || arm64 || riscv64)) || " +
 	"(darwin && arm64) || (windows && amd64))"

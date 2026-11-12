@@ -96,6 +96,16 @@ This repository uses GitHub Actions to automatically build and update static lib
 3. Regenerates the Go and assembly sources from the same upstream commit
 4. Automatically commits updates when libraries or sources change
 
+### Releases
+
+Releases follow upstream: when upstream publishes a version, the update workflow builds exactly that tagged commit and publishes it here under the same tag (hashtree `v0.2.6` is `v0.2.6` here).
+
+A change to the bindings alone cannot reuse an upstream version, and Go has no fourth version component. Such a change is tagged as a pre-release of the next upstream version, for example `v0.2.7-bindings.1`. It sorts after `v0.2.6` and before `v0.2.7`, but `go get -u` does not pick up pre-releases, so it has to be requested explicitly:
+
+```bash
+go get github.com/pk910/hashtree-bindings@v0.2.7-bindings.1
+```
+
 ### Relationship to Upstream
 
 The only intended difference from upstream is the packaging: upstream links `.syso` objects, this module links the static libraries in `lib/` through cgo. Everything else is taken from the `hashtree` submodule by `internal/upstreamsync` and must not be edited here:

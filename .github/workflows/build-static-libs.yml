@@ -183,6 +183,8 @@ jobs:
             f="libhashtree-${1//_/-}/libhashtree.a.buildinfo"
             if [ -f "$f" ]; then head -1 "$f" | tr -d '\r'; else echo "unknown"; fi
           }
+          # Second line of the Linux build info: the Ubuntu release of the runner.
+          export UBUNTU_RELEASE="$(sed -n 2p libhashtree-linux-amd64/libhashtree.a.buildinfo | tr -d '\r')"
           export CC_AMD64="$(read_bi linux_amd64)"
           export CC_ARM64="$(read_bi linux_arm64)"
           export CC_RISCV64="$(read_bi linux_riscv64)"
@@ -200,6 +202,7 @@ jobs:
               "__REPO__": os.environ.get("REPOSITORY", ""),
               "__WORKFLOW__": os.environ.get("WORKFLOW", ""),
               "__RUNID__": os.environ.get("RUN_ID", ""),
+              "__UBUNTU__": os.environ.get("UBUNTU_RELEASE", "") or "latest",
               "__CC_AMD64__": os.environ.get("CC_AMD64", "unknown"),
               "__CC_ARM64__": os.environ.get("CC_ARM64", "unknown"),
               "__CC_RISCV64__": os.environ.get("CC_RISCV64", "unknown"),
@@ -245,9 +248,9 @@ jobs:
 
           | Platform | Host / toolchain | Compiler | `make` invocation |
           |----------|------------------|----------|-------------------|
-          | linux_amd64 | ubuntu-22.04, native | `__CC_AMD64__` | `make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
-          | linux_arm64 | ubuntu-22.04, gcc-aarch64-linux-gnu | `__CC_ARM64__` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
-          | linux_riscv64 | ubuntu-22.04, gcc-riscv64-linux-gnu | `__CC_RISCV64__` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
+          | linux_amd64 | ubuntu-latest (__UBUNTU__), native | `__CC_AMD64__` | `make CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_arm64 | ubuntu-latest (__UBUNTU__), gcc-aarch64-linux-gnu | `__CC_ARM64__` | `make CC=aarch64-linux-gnu-gcc ARM=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
+          | linux_riscv64 | ubuntu-latest (__UBUNTU__), gcc-riscv64-linux-gnu | `__CC_RISCV64__` | `make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk"` |
           | darwin_arm64 | macos-latest, Apple clang | `__CC_DARWIN__` | `make CFLAGS="-O3 -Wall -Werror -mmacosx-version-min=11.0 -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
           | windows_amd64 | windows-latest, MSYS2 MINGW64 | `__CC_WINDOWS__` | `make CFLAGS="-O3 -Wall -Werror -static -ffile-prefix-map=$(pwd)=." ASFLAGS="-g -fpic"` |
 
@@ -291,7 +294,7 @@ jobs:
 
           **linux_amd64** - expect the hash in `lib/linux_amd64/libhashtree.a.sha256`:
           ```bash
-          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:__UBUNTU__ bash -c '
             set -eu
             apt-get update -qq
             apt-get install -y -qq git ca-certificates make build-essential >/dev/null
@@ -306,7 +309,7 @@ jobs:
 
           **linux_arm64** - expect the hash in `lib/linux_arm64/libhashtree.a.sha256`:
           ```bash
-          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:__UBUNTU__ bash -c '
             set -eu
             apt-get update -qq
             apt-get install -y -qq git ca-certificates make binutils gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu >/dev/null
@@ -321,22 +324,21 @@ jobs:
 
           **linux_riscv64** - expect the hash in `lib/linux_riscv64/libhashtree.a.sha256`:
           ```bash
-          docker run --rm -e COMMIT=__COMMIT__ ubuntu:22.04 bash -c '
+          docker run --rm -e COMMIT=__COMMIT__ ubuntu:__UBUNTU__ bash -c '
             set -eu
             apt-get update -qq
             apt-get install -y -qq git ca-certificates make binutils gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu >/dev/null
             git clone -q https://github.com/OffchainLabs/hashtree /h && git -C /h checkout -q "$COMMIT"
             cd /h/src
             export SOURCE_DATE_EPOCH=$(git -C /h log -1 --format=%ct)
-            make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc_zbb_zk" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk" >/dev/null
+            make CC=riscv64-linux-gnu-gcc RISCV=1 CFLAGS="-O3 -Wall -Werror -static -fno-plt -ffile-prefix-map=$(pwd)=. -march=rv64gc" ASFLAGS="-g -fpic -march=rv64gc_zbb_zk" >/dev/null
             cp ../build/lib/libhashtree.a . && riscv64-linux-gnu-strip --strip-debug libhashtree.a && riscv64-linux-gnu-ranlib libhashtree.a
             sha256sum libhashtree.a
           '
           ```
 
-          > Verified reproducible with gcc 11.4.0 (Ubuntu 22.04). If a digest differs,
-          > confirm your `gcc --version` matches the **Compiler** column above; a
-          > different compiler patch release can change the output.
+          > If a digest differs, confirm your `gcc --version` matches the **Compiler**
+          > column above; a different compiler patch release can change the output.
           """
 
           for key, value in vals.items():

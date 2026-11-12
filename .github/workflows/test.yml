@@ -14,8 +14,9 @@ name: Test Libraries
 #
 # Coverage: every runtime-detected implementation path is exercised. The Linux
 # job runs the cross-CPU matrix (.github/scripts/test-matrix.sh) under qemu-user
-# in a debian:trixie container (qemu >= 9 is required for the riscv crypto
-# hwprobe path; ubuntu-24.04 ships qemu 8.2.2 which cannot drive it). macOS and
+# in a debian:trixie container: its qemu (>= 9) can drive the riscv crypto hwprobe
+# path, and its RISC-V userland runs on plain RV64GC CPUs, unlike Ubuntu's, which
+# needs RVA23. macOS and
 # Windows get native single-path functional coverage.
 
 on:
@@ -33,7 +34,7 @@ on:
 
 jobs:
   test-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
